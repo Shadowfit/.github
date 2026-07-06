@@ -159,6 +159,30 @@ sequenceDiagram
 
 세션 종료 콜백이 지연되면 `SessionTimeoutScheduler`가 만료 세션을 `FAILED` 처리 시도하지만, AI의 `CompleteAnalysis` 콜백과 동시에 충돌하면 `@Version` 낙관적 락 재시도 후 콜백 결과를 우선합니다(first-write-wins, 멱등).
 
+## 🔀 데이터 플로우
+
+```mermaid
+flowchart TD
+    YT["YouTube 기준 영상"] -->|"youtube_url"| Extract["🤖 AI: 관절 좌표 추출"]
+    Extract -->|"jointCoordinates 시계열"| RefDB[("exercise_reference")]
+
+    Cam["📱 카메라 프레임 (base64)"] -->|"POST /pose"| MP["🤖 MediaPipe 추론"]
+    RefDB -.->|"세션 시작 시 조회"| DTW
+    MP --> DTW["DTW 비교 + syncRate 계산"]
+    DTW -->|"rep 완성 시 배치"| PoseDB[("pose_data<br/>jointCoordinates · syncRate · feedbackMessage")]
+    DTW -.->|"설계됨 · 미연동"| FeedbackDB[("session_feedback_log")]
+
+    PoseDB -->|"세션 종료 시 집계"| SessionDB[("session<br/>totalReps · avgSyncRate · calories")]
+
+    PoseDB -->|"3프레임 슬라이딩 윈도우"| Weak["취약 구간 탐지"]
+    SessionDB -->|"직전 세션과 비교"| Weak
+    Weak --> Report["세션 리포트"]
+    SessionDB -->|"주/월 단위 집계"| Weekly["주간요약 · 달력"]
+    DailyLogDB[("daily_log<br/>memo · mood")] --> Weekly
+```
+
+카메라 프레임은 AI 서버 내부에서 관절 좌표로 변환된 뒤 rep 단위로만 Spring에 저장되고, 세션 리포트·주간요약·달력은 모두 이 `pose_data`/`session` 테이블에서 파생됩니다.
+
 ---
 
 <div align="center">
