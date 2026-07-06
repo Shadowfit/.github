@@ -23,6 +23,23 @@ React Native 앱 ↔ Spring Boot 백엔드 ↔ FastAPI AI 서버가 gRPC로 연�
 
 > 🚧 **로드맵**: 적응형 난이도 자동 조절(성공/실패에 따른 레벨 승강), 스쿼트 외 운동(데드리프트·턱걸이) 확장은 설계 단계이며 아직 구현 전입니다.
 
+**대표 API**
+
+| Method | Endpoint | 설명 |
+| :--- | :--- | :--- |
+| `POST` | `/exercises/sessions` | 운동 세션 시작 (DB 생성 후 202 즉시 응답, gRPC 송신은 비동기) |
+| `PATCH` | `/sessions/{sessionId}/end` | 세션 종료 (단일 엔드포인트, 커밋 후 AI에 비동기 통보) |
+| `POST` | `/exercises/{exerciseId}/reference` | YouTube 기준 동작 좌표 추출 요청 |
+| `GET` `PATCH` | `/preferences/tts` | TTS 사용 여부·속도 조회/변경 |
+| `GET` | `/exercises/{exerciseId}/feedback-templates` | 운동별 피드백 멘트 조회 |
+| `GET` | `/reports/calendar` | 달력 기반 월별 운동 기록 |
+| `GET` | `/reports/weekly-summary` | 주간 활동 요약 |
+| `POST` | `/reports/daily-logs` | 운동 일지 작성 |
+| `GET` | `/reports/session/{sessionId}` | 세션별 상세 리포트(취약 구간·이전 세션 비교) |
+| `PATCH` | `/admin/exercises/{exerciseId}/thresholds` | 페르소나별 싱크로율 임계값 조정 (관리자) |
+
+전체 스펙은 백엔드 저장소의 Swagger(`/swagger-ui`) 참고.
+
 ---
 
 ## 🧩 아키텍처
@@ -66,8 +83,8 @@ sequenceDiagram
         end
     end
 
-    FE->>BE: PUT /exercises/sessions/{id}/stop
-    BE->>AI: gRPC StopAnalysis
+    FE->>BE: PATCH /sessions/{id}/end
+    BE->>AI: (afterCommit) gRPC StopAnalysis
     AI->>AI: SessionState 제거 + 누적 통계 계산
     AI->>BE: gRPC CompleteAnalysis (실패 시 최대 3회 재시도)
     BE->>DB: Session(status=COMPLETED, avg_sync_rate 등) 갱신 (@Version 낙관적 락)
@@ -85,17 +102,17 @@ sequenceDiagram
 
 | 역할 | 종류 |
 | :--- | :--- |
-| **Framework & Runtime** | ![React Native](https://img.shields.io/badge/REACT_NATIVE_0.81-61DAFB?style=for-the-badge&logo=react&logoColor=black) ![React](https://img.shields.io/badge/REACT_19-61DAFB?style=for-the-badge&logo=react&logoColor=black) ![Expo](https://img.shields.io/badge/EXPO_SDK_54-000020?style=for-the-badge&logo=expo&logoColor=white) |
-| **Routing** | ![Expo Router](https://img.shields.io/badge/EXPO_ROUTER_6-000020?style=for-the-badge&logo=expo&logoColor=white) |
-| **Language** | ![TypeScript](https://img.shields.io/badge/TYPESCRIPT_5.9-3178C6?style=for-the-badge&logo=typescript&logoColor=white) |
-| **State Management** | ![Zustand](https://img.shields.io/badge/ZUSTAND-443E38?style=for-the-badge&logo=react&logoColor=white) ![TanStack Query](https://img.shields.io/badge/TANSTACK_QUERY-FF4154?style=for-the-badge&logo=reactquery&logoColor=white) |
-| **Networking** | ![Axios](https://img.shields.io/badge/AXIOS-5A29E4?style=for-the-badge&logo=axios&logoColor=white) |
-| **Storage** | ![AsyncStorage](https://img.shields.io/badge/ASYNC_STORAGE-000000?style=for-the-badge&logo=react&logoColor=white) ![SecureStore](https://img.shields.io/badge/SECURE_STORE-000020?style=for-the-badge&logo=expo&logoColor=white) |
-| **Navigation & UI** | ![React Navigation](https://img.shields.io/badge/REACT_NAVIGATION-000000?style=for-the-badge&logo=react&logoColor=white) ![Reanimated](https://img.shields.io/badge/REANIMATED-FFCC00?style=for-the-badge&logo=react&logoColor=black) ![Gesture Handler](https://img.shields.io/badge/GESTURE_HANDLER-000000?style=for-the-badge&logo=react&logoColor=white) ![Safe Area Context](https://img.shields.io/badge/SAFE_AREA_CONTEXT-111111?style=for-the-badge&logo=react&logoColor=white) |
-| **Design & Graphics** | ![Linear Gradient](https://img.shields.io/badge/LINEAR_GRADIENT-FF6B6B?style=for-the-badge) ![SVG](https://img.shields.io/badge/SVG-FFB13B?style=for-the-badge&logo=svg&logoColor=black) ![Expo Vector Icons](https://img.shields.io/badge/VECTOR_ICONS-000020?style=for-the-badge&logo=expo&logoColor=white) |
-| **Media & Device Features** | ![Expo Camera](https://img.shields.io/badge/EXPO_CAMERA-000020?style=for-the-badge&logo=expo&logoColor=white) ![Image Picker](https://img.shields.io/badge/IMAGE_PICKER-000020?style=for-the-badge&logo=expo&logoColor=white) ![Media Library](https://img.shields.io/badge/MEDIA_LIBRARY-000020?style=for-the-badge&logo=expo&logoColor=white) ![Expo AV](https://img.shields.io/badge/EXPO_AV-000020?style=for-the-badge&logo=expo&logoColor=white) ![Expo Speech](https://img.shields.io/badge/EXPO_SPEECH-000020?style=for-the-badge&logo=expo&logoColor=white) ![Expo Haptics](https://img.shields.io/badge/EXPO_HAPTICS-000020?style=for-the-badge&logo=expo&logoColor=white) |
-| **Visualization & Components** | ![Calendars](https://img.shields.io/badge/CALENDARS-4285F4?style=for-the-badge) ![Chart Kit](https://img.shields.io/badge/CHART_KIT-34A853?style=for-the-badge) ![Slider](https://img.shields.io/badge/SLIDER-FF9900?style=for-the-badge) |
-| **Web Support** | ![React Native Web](https://img.shields.io/badge/REACT_NATIVE_WEB-61DAFB?style=for-the-badge&logo=react&logoColor=black) ![React DOM](https://img.shields.io/badge/REACT_DOM-61DAFB?style=for-the-badge&logo=react&logoColor=black) |
+| **Framework & Runtime** | ![React Native](https://img.shields.io/badge/REACT_NATIVE_0.81-61DAFB?style=flat-square&logo=react&logoColor=black) ![React](https://img.shields.io/badge/REACT_19-61DAFB?style=flat-square&logo=react&logoColor=black) ![Expo](https://img.shields.io/badge/EXPO_SDK_54-000020?style=flat-square&logo=expo&logoColor=white) |
+| **Routing** | ![Expo Router](https://img.shields.io/badge/EXPO_ROUTER_6-000020?style=flat-square&logo=expo&logoColor=white) |
+| **Language** | ![TypeScript](https://img.shields.io/badge/TYPESCRIPT_5.9-3178C6?style=flat-square&logo=typescript&logoColor=white) |
+| **State Management** | ![Zustand](https://img.shields.io/badge/ZUSTAND-443E38?style=flat-square&logo=react&logoColor=white) ![TanStack Query](https://img.shields.io/badge/TANSTACK_QUERY-FF4154?style=flat-square&logo=reactquery&logoColor=white) |
+| **Networking** | ![Axios](https://img.shields.io/badge/AXIOS-5A29E4?style=flat-square&logo=axios&logoColor=white) |
+| **Storage** | ![AsyncStorage](https://img.shields.io/badge/ASYNC_STORAGE-000000?style=flat-square&logo=react&logoColor=white) ![SecureStore](https://img.shields.io/badge/SECURE_STORE-000020?style=flat-square&logo=expo&logoColor=white) |
+| **Navigation & UI** | ![React Navigation](https://img.shields.io/badge/REACT_NAVIGATION-000000?style=flat-square&logo=react&logoColor=white) ![Reanimated](https://img.shields.io/badge/REANIMATED-FFCC00?style=flat-square&logo=react&logoColor=black) ![Gesture Handler](https://img.shields.io/badge/GESTURE_HANDLER-000000?style=flat-square&logo=react&logoColor=white) ![Safe Area Context](https://img.shields.io/badge/SAFE_AREA_CONTEXT-111111?style=flat-square&logo=react&logoColor=white) |
+| **Design & Graphics** | ![Linear Gradient](https://img.shields.io/badge/LINEAR_GRADIENT-FF6B6B?style=flat-square) ![SVG](https://img.shields.io/badge/SVG-FFB13B?style=flat-square&logo=svg&logoColor=black) ![Expo Vector Icons](https://img.shields.io/badge/VECTOR_ICONS-000020?style=flat-square&logo=expo&logoColor=white) |
+| **Media & Device Features** | ![Expo Camera](https://img.shields.io/badge/EXPO_CAMERA-000020?style=flat-square&logo=expo&logoColor=white) ![Image Picker](https://img.shields.io/badge/IMAGE_PICKER-000020?style=flat-square&logo=expo&logoColor=white) ![Media Library](https://img.shields.io/badge/MEDIA_LIBRARY-000020?style=flat-square&logo=expo&logoColor=white) ![Expo AV](https://img.shields.io/badge/EXPO_AV-000020?style=flat-square&logo=expo&logoColor=white) ![Expo Speech](https://img.shields.io/badge/EXPO_SPEECH-000020?style=flat-square&logo=expo&logoColor=white) ![Expo Haptics](https://img.shields.io/badge/EXPO_HAPTICS-000020?style=flat-square&logo=expo&logoColor=white) |
+| **Visualization & Components** | ![Calendars](https://img.shields.io/badge/CALENDARS-4285F4?style=flat-square) ![Chart Kit](https://img.shields.io/badge/CHART_KIT-34A853?style=flat-square) ![Slider](https://img.shields.io/badge/SLIDER-FF9900?style=flat-square) |
+| **Web Support** | ![React Native Web](https://img.shields.io/badge/REACT_NATIVE_WEB-61DAFB?style=flat-square&logo=react&logoColor=black) ![React DOM](https://img.shields.io/badge/REACT_DOM-61DAFB?style=flat-square&logo=react&logoColor=black) |
 
 ---
 
@@ -103,13 +120,13 @@ sequenceDiagram
 
 | 역할 | 종류 |
 | :--- | :--- |
-| **Language** | ![Java](https://img.shields.io/badge/JAVA_21-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white) |
-| **Framework** | ![Spring Boot](https://img.shields.io/badge/SPRING_BOOT_3.4-6DB33F?style=for-the-badge&logo=springboot&logoColor=white) ![Spring WebFlux](https://img.shields.io/badge/WEBFLUX-6DB33F?style=for-the-badge&logo=spring&logoColor=white) |
-| **Database / ORM** | ![MySQL](https://img.shields.io/badge/MYSQL_8-4479A1?style=for-the-badge&logo=mysql&logoColor=white) ![JPA](https://img.shields.io/badge/JPA-59666C?style=for-the-badge&logo=hibernate&logoColor=white) ![H2](https://img.shields.io/badge/H2_DATABASE-09476B?style=for-the-badge&logo=h2&logoColor=white) |
-| **Security** | ![JWT](https://img.shields.io/badge/JWT-000000?style=for-the-badge&logo=jsonwebtokens&logoColor=white) ![Spring Security](https://img.shields.io/badge/SPRING_SECURITY-6DB33F?style=for-the-badge&logo=springsecurity&logoColor=white) |
-| **API Docs** | ![Swagger](https://img.shields.io/badge/SWAGGER-85EA2D?style=for-the-badge&logo=swagger&logoColor=black) |
-| **Service 간 통신** | ![gRPC](https://img.shields.io/badge/GRPC-244C5A?style=for-the-badge&logo=grpc&logoColor=white) ![Protocol Buffers](https://img.shields.io/badge/PROTOBUF-4285F4?style=for-the-badge&logo=google&logoColor=white) |
-| **Utilities** | ![Lombok](https://img.shields.io/badge/LOMBOK-BC4521?style=for-the-badge&logo=java&logoColor=white) ![ModelMapper](https://img.shields.io/badge/MODELMAPPER-FF6F00?style=for-the-badge&logo=java&logoColor=white) |
+| **Language** | ![Java](https://img.shields.io/badge/JAVA_21-ED8B00?style=flat-square&logo=openjdk&logoColor=white) |
+| **Framework** | ![Spring Boot](https://img.shields.io/badge/SPRING_BOOT_3.4-6DB33F?style=flat-square&logo=springboot&logoColor=white) ![Spring WebFlux](https://img.shields.io/badge/WEBFLUX-6DB33F?style=flat-square&logo=spring&logoColor=white) |
+| **Database / ORM** | ![MySQL](https://img.shields.io/badge/MYSQL_8-4479A1?style=flat-square&logo=mysql&logoColor=white) ![JPA](https://img.shields.io/badge/JPA-59666C?style=flat-square&logo=hibernate&logoColor=white) ![H2](https://img.shields.io/badge/H2_DATABASE-09476B?style=flat-square&logo=h2&logoColor=white) |
+| **Security** | ![JWT](https://img.shields.io/badge/JWT-000000?style=flat-square&logo=jsonwebtokens&logoColor=white) ![Spring Security](https://img.shields.io/badge/SPRING_SECURITY-6DB33F?style=flat-square&logo=springsecurity&logoColor=white) |
+| **API Docs** | ![Swagger](https://img.shields.io/badge/SWAGGER-85EA2D?style=flat-square&logo=swagger&logoColor=black) |
+| **Service 간 통신** | ![gRPC](https://img.shields.io/badge/GRPC-244C5A?style=flat-square&logo=grpc&logoColor=white) ![Protocol Buffers](https://img.shields.io/badge/PROTOBUF-4285F4?style=flat-square&logo=google&logoColor=white) |
+| **Utilities** | ![Lombok](https://img.shields.io/badge/LOMBOK-BC4521?style=flat-square&logo=java&logoColor=white) ![ModelMapper](https://img.shields.io/badge/MODELMAPPER-FF6F00?style=flat-square&logo=java&logoColor=white) |
 
 ---
 
@@ -117,12 +134,12 @@ sequenceDiagram
 
 | 역할 | 종류 |
 | :--- | :--- |
-| **Language** | ![Python](https://img.shields.io/badge/PYTHON-3776AB?style=for-the-badge&logo=python&logoColor=white) |
-| **Framework** | ![FastAPI](https://img.shields.io/badge/FASTAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white) ![Uvicorn](https://img.shields.io/badge/UVICORN-4051B5?style=for-the-badge&logo=uvicorn&logoColor=white) |
-| **AI / CV** | ![MediaPipe](https://img.shields.io/badge/MEDIAPIPE-FF6F00?style=for-the-badge&logo=google&logoColor=white) ![OpenCV](https://img.shields.io/badge/OPENCV-5C3EE8?style=for-the-badge&logo=opencv&logoColor=white) ![PyTorch](https://img.shields.io/badge/PYTORCH-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white) |
-| **Motion Analysis** | ![DTW](https://img.shields.io/badge/DTW-DYNAMIC_TIME_WARPING-blue?style=for-the-badge) |
-| **Validation** | ![Pydantic](https://img.shields.io/badge/PYDANTIC-E92063?style=for-the-badge&logo=pydantic&logoColor=white) |
-| **Service 간 통신** | ![gRPC](https://img.shields.io/badge/GRPC-244C5A?style=for-the-badge&logo=grpc&logoColor=white) ![Protocol Buffers](https://img.shields.io/badge/PROTOBUF-4285F4?style=for-the-badge&logo=google&logoColor=white) |
+| **Language** | ![Python](https://img.shields.io/badge/PYTHON-3776AB?style=flat-square&logo=python&logoColor=white) |
+| **Framework** | ![FastAPI](https://img.shields.io/badge/FASTAPI-009688?style=flat-square&logo=fastapi&logoColor=white) ![Uvicorn](https://img.shields.io/badge/UVICORN-4051B5?style=flat-square&logo=uvicorn&logoColor=white) |
+| **AI / CV** | ![MediaPipe](https://img.shields.io/badge/MEDIAPIPE-FF6F00?style=flat-square&logo=google&logoColor=white) ![OpenCV](https://img.shields.io/badge/OPENCV-5C3EE8?style=flat-square&logo=opencv&logoColor=white) ![PyTorch](https://img.shields.io/badge/PYTORCH-EE4C2C?style=flat-square&logo=pytorch&logoColor=white) |
+| **Motion Analysis** | ![DTW](https://img.shields.io/badge/DTW-DYNAMIC_TIME_WARPING-blue?style=flat-square) |
+| **Validation** | ![Pydantic](https://img.shields.io/badge/PYDANTIC-E92063?style=flat-square&logo=pydantic&logoColor=white) |
+| **Service 간 통신** | ![gRPC](https://img.shields.io/badge/GRPC-244C5A?style=flat-square&logo=grpc&logoColor=white) ![Protocol Buffers](https://img.shields.io/badge/PROTOBUF-4285F4?style=flat-square&logo=google&logoColor=white) |
 
 ---
 
@@ -130,10 +147,10 @@ sequenceDiagram
 
 | 역할 | 종류 |
 | :--- | :--- |
-| **Container** | ![Docker](https://img.shields.io/badge/DOCKER-2496ED?style=for-the-badge&logo=docker&logoColor=white) ![Docker Compose](https://img.shields.io/badge/DOCKER_COMPOSE-2496ED?style=for-the-badge&logo=docker&logoColor=white) |
-| **Web Server** | ![Nginx](https://img.shields.io/badge/NGINX-009639?style=for-the-badge&logo=nginx&logoColor=white) |
-| **Cloud** | ![AWS](https://img.shields.io/badge/AWS-232F3E?style=for-the-badge&logo=amazonaws&logoColor=white) |
-| **CI/CD** | ![GitHub Actions](https://img.shields.io/badge/GITHUB_ACTIONS-2088FF?style=for-the-badge&logo=githubactions&logoColor=white) |
-| **Service 간 프로토콜** | ![REST API](https://img.shields.io/badge/REST_API-005571?style=for-the-badge) ![gRPC](https://img.shields.io/badge/GRPC-244C5A?style=for-the-badge&logo=grpc&logoColor=white) |
+| **Container** | ![Docker](https://img.shields.io/badge/DOCKER-2496ED?style=flat-square&logo=docker&logoColor=white) ![Docker Compose](https://img.shields.io/badge/DOCKER_COMPOSE-2496ED?style=flat-square&logo=docker&logoColor=white) |
+| **Web Server** | ![Nginx](https://img.shields.io/badge/NGINX-009639?style=flat-square&logo=nginx&logoColor=white) |
+| **Cloud** | ![AWS](https://img.shields.io/badge/AWS-232F3E?style=flat-square&logo=amazonaws&logoColor=white) |
+| **CI/CD** | ![GitHub Actions](https://img.shields.io/badge/GITHUB_ACTIONS-2088FF?style=flat-square&logo=githubactions&logoColor=white) |
+| **Service 간 프로토콜** | ![REST API](https://img.shields.io/badge/REST_API-005571?style=flat-square) ![gRPC](https://img.shields.io/badge/GRPC-244C5A?style=flat-square&logo=grpc&logoColor=white) |
 
 </div>
