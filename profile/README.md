@@ -7,11 +7,7 @@
 사용자가 스마트폰 카메라로 스쿼트 동작을 촬영하면, AI 서버가 자세를 추출해 기준(레퍼런스) 동작과 시계열로 비교(DTW)하고, 그 결과를 실시간 피드백(음성 안내 포함)으로 되돌려줍니다.
 React Native 앱 ↔ Spring Boot 백엔드 ↔ FastAPI AI 서버가 gRPC로 연동되는 구조입니다.
 
-| 저장소 | 역할 |
-| :--- | :--- |
-| [FRONT](https://github.com/SMU-2026-1-capstone-project/FRONT) | React Native 클라이언트 |
-| [ShadowFit-BACKEND](https://github.com/SMU-2026-1-capstone-project/ShadowFit-BACKEND) | Spring Boot API 서버 |
-| [AI-server](https://github.com/SMU-2026-1-capstone-project/AI-server) | FastAPI 자세 분석 서버 |
+
 
 </div>
 
