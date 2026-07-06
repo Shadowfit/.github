@@ -94,13 +94,14 @@ graph LR
 
 ## 🔁 세션 라이프사이클 시퀀스
 
+### ▶️ 세션 시작 & 실시간 분석
+
 ```mermaid
 sequenceDiagram
     participant FE as 📱 App
     participant AI as 🤖 FastAPI AI
     participant BE as ⚙️ Spring Boot
     participant DB as 🗄️ MySQL
-    participant T as ⏰ TimeoutScheduler
 
     FE->>BE: POST /exercises/sessions
     BE->>DB: Session(status=IN_PROGRESS) 생성
@@ -124,6 +125,19 @@ sequenceDiagram
         BE->>DB: feedback_log 저장 (uniqueKey + INSERT IGNORE, 멱등)
     end
     end
+```
+
+프레임마다 AI가 rep 완성 여부를 판단해 완성된 rep만 Spring에 배치로 콜백합니다. TTS 발화 이벤트 배치(`ReportFeedbackBatch`)는 Spring 계약은 완료됐지만 AI 서버 쪽 세트 경계 감지·전송 로직은 아직 구현 전입니다.
+
+### ⏹️ 세션 종료 & 동시성 처리
+
+```mermaid
+sequenceDiagram
+    participant FE as 📱 App
+    participant AI as 🤖 FastAPI AI
+    participant BE as ⚙️ Spring Boot
+    participant DB as 🗄️ MySQL
+    participant T as ⏰ TimeoutScheduler
 
     FE->>BE: PATCH /sessions/{id}/end
     BE->>DB: endTime 기록 (commit)
@@ -143,7 +157,7 @@ sequenceDiagram
     BE->>DB: status=COMPLETED (first-write-wins, 멱등)
 ```
 
-세션 종료 콜백이 지연되면 `SessionTimeoutScheduler`가 만료 세션을 `FAILED` 처리 시도하지만, AI의 `CompleteAnalysis` 콜백과 동시에 충돌하면 `@Version` 낙관적 락 재시도 후 콜백 결과를 우선합니다(first-write-wins, 멱등). TTS 발화 이벤트 배치(`ReportFeedbackBatch`)는 Spring 계약은 완료됐지만 AI 서버 쪽 세트 경계 감지·전송 로직은 아직 구현 전입니다.
+세션 종료 콜백이 지연되면 `SessionTimeoutScheduler`가 만료 세션을 `FAILED` 처리 시도하지만, AI의 `CompleteAnalysis` 콜백과 동시에 충돌하면 `@Version` 낙관적 락 재시도 후 콜백 결과를 우선합니다(first-write-wins, 멱등).
 
 ---
 
