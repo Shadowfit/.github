@@ -45,21 +45,27 @@ flowchart LR
 | 🧑‍🤝‍🧑 **페르소나별 피드백 톤** | 헬린이 · 헬창 · 다이어트 · 재활 4가지 페르소나에 따라 다른 톤의 피드백 템플릿 제공 |
 | 📅 **운동 기록 & 리포트** | 달력 기반 운동 일지, 세션별 리포트(취약 구간 분석, 이전 세션 대비 변화) 제공 |
 
-> 🚧 **로드맵**: 적응형 난이도 자동 조절(성공/실패에 따른 레벨 승강), 스쿼트 외 운동(데드리프트·턱걸이) 확장은 설계 단계이며 아직 구현 전입니다.
+> 🚧 **로드맵**: 적응형 난이도 자동 조절(성공/실패에 따른 레벨 승강)은 설계 단계입니다. 운동 종목은 **스쿼트·런지·플랭크** 3개가 카탈로그에 등록돼 있지만 **분석기가 붙은 것은 스쿼트뿐**이라, 나머지 둘은 `analysis_supported=false`로 세션 생성이 차단됩니다. 런지·플랭크 분석기 추가가 다음 확장 항목입니다.
 
 **대표 API**
 
 | Method | Endpoint | 설명 |
 | :--- | :--- | :--- |
 | `POST` | `/exercises/sessions` | 운동 세션 시작 (DB 생성 후 202 즉시 응답, gRPC 송신은 비동기) |
-| `PATCH` | `/sessions/{sessionId}/end` | 세션 종료 (단일 엔드포인트, 커밋 후 AI에 비동기 통보) |
+| `PATCH` | `/sessions/{sessionId}/end` | 세션 종료 (단일 엔드포인트, AI 통보는 아웃박스로 위임) |
+| `GET` | `/sessions/active` | 진행 중인 세션 조회 (앱 재진입 시 복구) |
+| `POST` | `/sessions/{sessionId}/reattach` | 세션 재부착 (이어하기) |
 | `POST` | `/exercises/{exerciseId}/reference` | YouTube 기준 동작 좌표 추출 요청 |
 | `GET` `PATCH` | `/preferences/tts` | TTS 사용 여부·속도 조회/변경 |
 | `GET` | `/exercises/{exerciseId}/feedback-templates` | 운동별 피드백 멘트 조회 |
 | `GET` | `/reports/calendar` | 달력 기반 월별 운동 기록 |
+| `GET` | `/reports/daily` | 특정 날짜의 운동 세션 목록 |
 | `GET` | `/reports/weekly-summary` | 주간 활동 요약 |
 | `POST` | `/reports/daily-logs` | 운동 일지 작성 |
 | `GET` | `/reports/session/{sessionId}` | 세션별 상세 리포트(취약 구간·이전 세션 비교) |
+| `GET` | `/admin/members` `/admin/sessions` | 관리자 회원·세션 목록 (필터 5종·4종 임의 조합) |
+| `GET` | `/admin/stats/overview` | 관리자 대시보드 위젯 5종 |
+| `GET` `POST` `PATCH` `DELETE` | `/admin/exercises` | 운동 종목 CRUD (삭제는 세션 이력이 있으면 409) |
 | `PATCH` | `/admin/exercises/{exerciseId}/thresholds` | 페르소나별 싱크로율 임계값 조정 (관리자) |
 
 전체 스펙은 [백엔드 저장소](https://github.com/Shadowfit/backend)를 로컬 기동한 뒤 Swagger(`/swagger-ui`)에서 확인할 수 있습니다.
@@ -137,12 +143,15 @@ sequenceDiagram
     participant AI as 🤖 FastAPI AI
     participant BE as ⚙️ Spring Boot
     participant DB as 🗄️ MySQL
+    participant P as 📤 OutboxPublisher
     participant T as ⏰ TimeoutScheduler
 
     FE->>BE: PATCH /sessions/{id}/end
-    BE->>DB: endTime 기록 (commit)
+    BE->>DB: endTime + 통보 행(outbox) 한 트랜잭션 커밋
     BE-->>FE: 200 OK
-    BE->>AI: (afterCommit) gRPC StopAnalysis
+    P->>DB: PENDING 행 선점 (PROCESSING + 만료시각)
+    P->>AI: gRPC StopAnalysis (deadline 5s · 서킷브레이커)
+    P->>DB: 결과 기록 (실패면 백오프 후 재시도)
     AI->>AI: SessionState 제거 + 누적 통계 계산
 
     par 오래 걸리는 세션은 동시에
@@ -156,6 +165,8 @@ sequenceDiagram
     end
     BE->>DB: status=COMPLETED (first-write-wins, 멱등)
 ```
+
+세션 종료 요청은 **세션 변경과 통보 행을 한 트랜잭션에 커밋하고 끝납니다** — 이 경로에 gRPC가 없습니다. 실제 송신은 `OutboxPublisher`가 선점 → 송신(트랜잭션 밖) → 결과 기록 순으로 처리하므로, 인스턴스가 죽어도 통보가 증발하지 않습니다(at-least-once + 수신측 멱등).
 
 세션 종료 콜백이 지연되면 `SessionTimeoutScheduler`가 만료 세션을 `FAILED` 처리 시도하지만, AI의 `CompleteAnalysis` 콜백과 동시에 충돌하면 `@Version` 낙관적 락 재시도 후 콜백 결과를 우선합니다(first-write-wins, 멱등).
 
@@ -207,9 +218,11 @@ flowchart TD
 | 역할 | 종류 |
 | :--- | :--- |
 | **Language** | ![Java](https://img.shields.io/badge/JAVA_21-ED8B00?style=flat-square&logo=openjdk&logoColor=white) |
-| **Framework** | ![Spring Boot](https://img.shields.io/badge/SPRING_BOOT_3.4-6DB33F?style=flat-square&logo=springboot&logoColor=white) ![Spring WebFlux](https://img.shields.io/badge/WEBFLUX-6DB33F?style=flat-square&logo=spring&logoColor=white) |
-| **Database / ORM** | ![MySQL](https://img.shields.io/badge/MYSQL_8-4479A1?style=flat-square&logo=mysql&logoColor=white) ![JPA](https://img.shields.io/badge/JPA-59666C?style=flat-square&logo=hibernate&logoColor=white) ![H2](https://img.shields.io/badge/H2_DATABASE-09476B?style=flat-square&logo=h2&logoColor=white) |
+| **Framework** | ![Spring Boot](https://img.shields.io/badge/SPRING_BOOT_3.5-6DB33F?style=flat-square&logo=springboot&logoColor=white) ![Spring WebFlux](https://img.shields.io/badge/WEBFLUX-6DB33F?style=flat-square&logo=spring&logoColor=white) |
+| **Database / ORM** | ![MySQL](https://img.shields.io/badge/MYSQL_8-4479A1?style=flat-square&logo=mysql&logoColor=white) ![JPA](https://img.shields.io/badge/JPA-59666C?style=flat-square&logo=hibernate&logoColor=white) ![QueryDSL](https://img.shields.io/badge/QUERYDSL-0769AD?style=flat-square) ![Flyway](https://img.shields.io/badge/FLYWAY-CC0000?style=flat-square&logo=flyway&logoColor=white) ![H2](https://img.shields.io/badge/H2_DATABASE-09476B?style=flat-square&logo=h2&logoColor=white) |
 | **Security** | ![JWT](https://img.shields.io/badge/JWT-000000?style=flat-square&logo=jsonwebtokens&logoColor=white) ![Spring Security](https://img.shields.io/badge/SPRING_SECURITY-6DB33F?style=flat-square&logo=springsecurity&logoColor=white) |
+| **안정성 / 캐싱** | ![Resilience4j](https://img.shields.io/badge/RESILIENCE4J-1F6FEB?style=flat-square) ![Caffeine](https://img.shields.io/badge/CAFFEINE-795548?style=flat-square) |
+| **관측** | ![Actuator](https://img.shields.io/badge/SPRING_ACTUATOR-6DB33F?style=flat-square&logo=springboot&logoColor=white) ![Micrometer](https://img.shields.io/badge/MICROMETER-117A8B?style=flat-square) ![Prometheus](https://img.shields.io/badge/PROMETHEUS-E6522C?style=flat-square&logo=prometheus&logoColor=white) ![Grafana](https://img.shields.io/badge/GRAFANA-F46800?style=flat-square&logo=grafana&logoColor=white) |
 | **API Docs** | ![Swagger](https://img.shields.io/badge/SWAGGER-85EA2D?style=flat-square&logo=swagger&logoColor=black) |
 | **Service 간 통신** | ![gRPC](https://img.shields.io/badge/GRPC-244C5A?style=flat-square&logo=grpc&logoColor=white) ![Protocol Buffers](https://img.shields.io/badge/PROTOBUF-4285F4?style=flat-square&logo=google&logoColor=white) |
 | **Utilities** | ![Lombok](https://img.shields.io/badge/LOMBOK-BC4521?style=flat-square&logo=java&logoColor=white) ![ModelMapper](https://img.shields.io/badge/MODELMAPPER-FF6F00?style=flat-square&logo=java&logoColor=white) |
@@ -234,9 +247,11 @@ flowchart TD
 | 역할 | 종류 |
 | :--- | :--- |
 | **Container** | ![Docker](https://img.shields.io/badge/DOCKER-2496ED?style=flat-square&logo=docker&logoColor=white) ![Docker Compose](https://img.shields.io/badge/DOCKER_COMPOSE-2496ED?style=flat-square&logo=docker&logoColor=white) |
-| **Web Server** | ![Nginx](https://img.shields.io/badge/NGINX-009639?style=flat-square&logo=nginx&logoColor=white) |
 | **Cloud** | ![AWS](https://img.shields.io/badge/AWS-232F3E?style=flat-square&logo=amazonaws&logoColor=white) |
-| **CI/CD** | ![GitHub Actions](https://img.shields.io/badge/GITHUB_ACTIONS-2088FF?style=flat-square&logo=githubactions&logoColor=white) |
+| **CI/CD** | ![GitHub Actions](https://img.shields.io/badge/GITHUB_ACTIONS-2088FF?style=flat-square&logo=githubactions&logoColor=white) ![GHCR](https://img.shields.io/badge/GHCR-181717?style=flat-square&logo=github&logoColor=white) |
+| **관측 스택** | ![Prometheus](https://img.shields.io/badge/PROMETHEUS-E6522C?style=flat-square&logo=prometheus&logoColor=white) ![Grafana](https://img.shields.io/badge/GRAFANA-F46800?style=flat-square&logo=grafana&logoColor=white) |
 | **Service 간 프로토콜** | ![REST API](https://img.shields.io/badge/REST_API-005571?style=flat-square) ![gRPC](https://img.shields.io/badge/GRPC-244C5A?style=flat-square&logo=grpc&logoColor=white) |
 
 </div>
+
+> 🚧 **배포 현황**: GitHub Actions가 이미지를 빌드해 GHCR에 푸시하는 데까지는 실제로 동작하고, **배포 대상 호스트는 아직 연결되지 않았습니다.** HTTPS·리버스 프록시·도메인은 2학기 운영 작업(OP-02)에 잡혀 있어 이 표에서는 뺐습니다. 현재 AWS는 배포가 아니라 **DB 실험 재검증**(EC2 `m6i.xlarge`에서 1억 행 × 실제 2.3KB JSON)에 쓰이고 있습니다.
